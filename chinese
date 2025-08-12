@@ -1,0 +1,41 @@
+GPT API 中转服务
+
+这是一个使用 FastAPI 搭建的中转服务示例，可以将来自 GPT-4o 等模型的 API 请求，转换为 GPT-5 支持的 max_completion_tokens 格式，以保证兼容性。
+
+功能
+
+接收来自任意客户端的 OpenAI API 请求
+
+将 max_tokens 参数转换为 GPT-5 的 max_completion_tokens
+
+将请求转发至目标 OpenAI API
+
+返回原始响应给客户端
+
+安装
+
+pip install -r requirements.txt
+
+启动
+
+uvicorn main:app --host 0.0.0.0 --port 8000
+
+使用方法
+
+将客户端的 OpenAI API 地址改为中转服务的地址，例如：
+
+http://localhost:8000/v1/chat/completions
+
+文件说明
+
+main.py：FastAPI 主程序，处理请求转发和参数转换
+
+requirements.txt：依赖包列表
+
+README.md：项目说明文档
+
+注意
+
+需要在环境变量中设置 OPENAI_API_KEY 才能正常调用官方 API
+
+本服务仅做参数转换与转发，不会修改或缓存任何响应数据
