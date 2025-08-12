@@ -1,41 +1,119 @@
-GPT API 中转服务
+可以，我把 “Gpt-proxy-github-ready” 那部分内容翻译成中文版本，保留原有的结构和技术细节，方便直接使用。
 
-这是一个使用 FastAPI 搭建的中转服务示例，可以将来自 GPT-4o 等模型的 API 请求，转换为 GPT-5 支持的 max_completion_tokens 格式，以保证兼容性。
+概览（为什么需要中转）
+客户端依旧在用 GPT-4o 的参数（例如 max_tokens），但你想把请求转发到 GPT-5 或新版 Responses API，这时候字段名称、参数含义以及流式/非流式行为可能不同。你可以在中转层做参数和数据格式的转换，这样前端代码就不用改。
 
-功能
+在新版 Responses API 中，OpenAI 推荐用 max_output_tokens 来控制输出长度；旧版 completions/chat API 则用 max_tokens 或 max_completion_tokens。中转层的核心任务之一就是做这些字段的映射。
 
-接收来自任意客户端的 OpenAI API 请求
+中转还能统一做认证、限流、日志脱敏、错误重试、A/B 模型映射与降级等功能，这些都是生产环境中常见的需求。
 
-将 max_tokens 参数转换为 GPT-5 的 max_completion_tokens
+快速开始（示例代码）
+项目结构（最小版本）：
 
-将请求转发至目标 OpenAI API
+css
+复制
+编辑
+gpt-proxy/
+├─ Dockerfile
+├─ docker-compose.yml
+├─ requirements.txt
+└─ app/
+   ├─ main.py
+   └─ utils.py
+requirements.txt
 
-返回原始响应给客户端
+css
+复制
+编辑
+fastapi
+uvicorn[standard]
+httpx[http2]
+python-dotenv
+app/main.py 主要功能：
 
-安装
+读取环境变量（OpenAI API Key、中转服务的认证 Key、目标 API 类型）
 
-pip install -r requirements.txt
+接收客户端请求（支持 GPT-4o 风格参数）
 
-启动
+映射参数到 GPT-5 / Responses API 所需格式（如 max_tokens → max_output_tokens）
 
-uvicorn main:app --host 0.0.0.0 --port 8000
+支持非流式和流式两种转发方式
 
-使用方法
+对上游返回结果做格式兼容
 
-将客户端的 OpenAI API 地址改为中转服务的地址，例如：
+核心映射函数：
 
-http://localhost:8000/v1/chat/completions
+python
+复制
+编辑
+def map_client_to_openai(body: Dict[str, Any], target_api: str) -> Dict[str, Any]:
+    if "max_tokens" in body:
+        v = body.pop("max_tokens")
+        if target_api == "responses":
+            payload["max_output_tokens"] = v
+        else:
+            payload["max_completion_tokens"] = v
+    # 其他字段映射...
+Docker 部署示例
+Dockerfile
 
-文件说明
+dockerfile
+复制
+编辑
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app /app
+ENV PYTHONUNBUFFERED=1
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+docker-compose.yml
 
-main.py：FastAPI 主程序，处理请求转发和参数转换
+yaml
+复制
+编辑
+version: "3.8"
+services:
+  proxy:
+    build: .
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PROXY_API_KEY=${PROXY_API_KEY}
+      - TARGET_API=responses
+    ports:
+      - "8000:8000"
+调用示例
+非流式调用
 
-requirements.txt：依赖包列表
+bash
+复制
+编辑
+curl -X POST "http://localhost:8000/proxy" \
+  -H "Content-Type: application/json" \
+  -H "X-API-KEY: changeme" \
+  -d '{
+    "model":"gpt-4o",
+    "messages": [{"role":"user","content":"帮我写个短句"}],
+    "max_tokens": 200,
+    "temperature": 0.7
+  }'
+流式调用
 
-README.md：项目说明文档
+bash
+复制
+编辑
+curl -N -H "X-API-KEY: changeme" -H "Content-Type: application/json" \
+  -X POST http://localhost:8000/proxy \
+  -d '{"messages":[{"role":"user","content":"写一段故事"}],"stream":true,"max_tokens":512}'
+生产环境注意事项
+密钥管理：不要在客户端暴露 OpenAI API Key，所有上游调用都走中转服务。
 
-注意
+认证：示例用 X-API-KEY，生产建议改为 JWT、OAuth 或 mTLS。
 
-需要在环境变量中设置 OPENAI_API_KEY 才能正常调用官方 API
+限流与计费：防止滥用和高额账单，可用 Redis 做 RPS 与 token 使用限制。
 
-本服务仅做参数转换与转发，不会修改或缓存任何响应数据
+日志脱敏：不要在日志中记录完整 prompt 或敏感信息。
+
+错误处理与重试：对 5xx 做指数回退重试，对 429 遵守 Retry-After。
+
+成本可见化：中转层记录 token 消耗和响应时间。
