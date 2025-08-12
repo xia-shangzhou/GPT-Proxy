@@ -373,10 +373,4 @@ jobs:
 
 ---
 
-If you'd like, I can:
 
-* generate these files as a zip and provide a download link,
-* push them to a GitHub repo (you'd need to provide a repo name and OAuth token), or
-* convert the proxy to Node.js/Go instead.
-
-告诉我你想要的下一步。
